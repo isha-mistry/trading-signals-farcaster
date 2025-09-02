@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import UserOnboarding from "./UserOnboarding";
 
 // Simple toast notification component
 function Toast({ message, show, onClose }: { message: string; show: boolean; onClose: () => void }) {
@@ -184,7 +185,7 @@ function SignalCard({ signal, index, onTradeClick }: { signal: Signal; index: nu
         {/* Cleaner Header */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
-            <h3 className="text-lg font-bold text-white">
+            <h3 className="text-base font-bold text-white">
               {sd.token || signal.coin || "Unknown"}
             </h3>
             {sd.signal && (
@@ -210,29 +211,26 @@ function SignalCard({ signal, index, onTradeClick }: { signal: Signal; index: nu
         </div>
 
         {/* Compact Metrics */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
-            <div className="text-xs text-gray-400 mb-1">Current</div>
-            <div className="text-sm font-bold text-white">
-              {formatCurrency(sd.currentPrice)}
+        <div className="space-y-2 mb-4">
+          {/* Current and Stop Loss side by side */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-gray-800/50 rounded-lg p-2 border border-gray-700/50">
+              <div className="text-xs text-gray-400 mb-1">Current</div>
+              <div className="text-sm font-bold text-white">
+                {formatCurrency(sd.currentPrice)}
+              </div>
+            </div>
+
+            <div className="bg-red-500/10 rounded-lg p-2 border border-red-500/30">
+              <div className="text-xs text-red-400 mb-1">Stop Loss</div>
+              <div className="text-sm font-bold text-white">
+                {formatCurrency(sd.stopLoss)}
+              </div>
             </div>
           </div>
 
-          <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
-            <div className="text-xs text-gray-400 mb-1">Entry</div>
-            <div className="text-sm font-bold text-white">
-              {formatCurrency(sd.priceAtTweet)}
-            </div>
-          </div>
-
-          <div className="bg-red-500/10 rounded-lg p-3 border border-red-500/30">
-            <div className="text-xs text-red-400 mb-1">Stop Loss</div>
-            <div className="text-sm font-bold text-white">
-              {formatCurrency(sd.stopLoss)}
-            </div>
-          </div>
-
-          <div className="bg-blue-500/10 rounded-lg p-3 border border-blue-500/30">
+          {/* Timeline full width */}
+          <div className="bg-blue-500/10 rounded-lg p-2 border border-blue-500/30">
             <div className="text-xs text-blue-400 mb-1">Timeline</div>
             <div className="text-xs font-bold text-white">
               {sd.timeline || "N/A"}
@@ -261,7 +259,7 @@ function SignalCard({ signal, index, onTradeClick }: { signal: Signal; index: nu
         {sd.tradeTip && (
           <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 mb-3">
             <div className="text-xs text-blue-400 font-semibold mb-1">Trade Tip</div>
-            <div className="text-sm text-gray-300">{sd.tradeTip}</div>
+            <div className="text-xs text-gray-300">{sd.tradeTip}</div>
           </div>
         )}
 
@@ -287,10 +285,70 @@ export default function SignalsFeed() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [showToast, setShowToast] = useState<boolean>(false);
+  const [userSafeAddress, setUserSafeAddress] = useState<string | null>(null);
+  const [userUsername, setUserUsername] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(true);
 
-  const handleTradeClick = (signal: Signal) => {
-    setShowToast(true);
+  const handleTradeClick = async (signal: Signal) => {
+    // Prepare the trade data object as requested
+    const tradeData = {
+      "Signal Message": signal.signal_data?.signal || signal.signal_message || "buy",
+      "Token Mentioned": signal.signal_data?.tokenMentioned || signal.coin || "Unknown",
+      "TP1": signal.signal_data?.targets?.[0] || 0,
+      "TP2": signal.signal_data?.targets?.[1] || 0,
+      "SL": signal.signal_data?.stopLoss || 0,
+      "Current Price": signal.signal_data?.currentPrice || 0,
+      "Max Exit Time": { "$date": signal.signal_data?.maxExitTime || new Date().toISOString() },
+      "username": userUsername || "cp", // Use fetched username or fallback
+      "safeAddress": userSafeAddress || ""
+    };
+
+    // console.log("Trade Data:", tradeData);
+
+    try {
+
+      if(!process.env.NEXT_PUBLIC_API_URL){
+        throw new Error("NEXT_PUBLIC_API_URL is not set");
+      }
+
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/signal/process`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(tradeData),
+      });
+      setShowToast(true);
+
+    } catch (e) {
+      console.error("Error executing trade:", e);
+    }
   };
+
+  const handleOnboardingComplete = (safeAddress: string, username: string) => {
+    setUserSafeAddress(safeAddress);
+    setUserUsername(username);
+    setShowOnboarding(false);
+  };
+
+  const handleResetOnboarding = () => {
+    localStorage.removeItem("user_safe_address");
+    localStorage.removeItem("user_username");
+    setUserSafeAddress(null);
+    setUserUsername(null);
+    setShowOnboarding(true);
+  };
+
+  // Check for existing safe address and username on mount
+  useEffect(() => {
+    const existingAddress = localStorage.getItem("user_safe_address");
+    const existingUsername = localStorage.getItem("user_username");
+    if (existingAddress && existingUsername) {
+      setUserSafeAddress(existingAddress);
+      setUserUsername(existingUsername);
+      setShowOnboarding(false);
+    }
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -303,6 +361,7 @@ export default function SignalsFeed() {
           throw new Error(json.message || json.error || "Failed to load signals");
         }
         const normalized = (json.data || []).map((r) => normalizeSignal(r));
+
         if (isMounted) setSignals(normalized as Signal[]);
       } catch (e: any) {
         if (isMounted) setError(e?.message || "Failed to load signals");
@@ -315,6 +374,11 @@ export default function SignalsFeed() {
       isMounted = false;
     };
   }, []);
+
+  // Show onboarding if user hasn't completed it yet
+  if (showOnboarding) {
+    return <UserOnboarding onComplete={handleOnboardingComplete} />;
+  }
 
   if (loading) {
     return (
@@ -330,11 +394,12 @@ export default function SignalsFeed() {
                 <div className="h-5 w-24 bg-gray-700 rounded" />
                 <div className="h-4 w-16 bg-gray-700 rounded" />
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-                <div className="h-14 bg-gray-700 rounded-lg" />
-                <div className="h-14 bg-gray-700 rounded-lg" />
-                <div className="h-14 bg-gray-700 rounded-lg" />
-                <div className="h-14 bg-gray-700 rounded-lg" />
+              <div className="space-y-2 mb-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="h-12 bg-gray-700 rounded-lg" />
+                  <div className="h-12 bg-gray-700 rounded-lg" />
+                </div>
+                <div className="h-10 bg-gray-700 rounded-lg" />
               </div>
               <div className="flex gap-2">
                 <div className="h-6 w-16 bg-gray-700 rounded" />
@@ -374,10 +439,39 @@ export default function SignalsFeed() {
   return (
     <>
       <Toast
-        message="Trading feature coming soon! 🚀"
+        message={`Trade executed successfully 🚀`}
         show={showToast}
         onClose={() => setShowToast(false)}
       />
+
+      {/* Safe Address and Username Display */}
+      <div className="max-w-2xl mx-auto px-4 mb-4">
+        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-green-400">🔐</span>
+              <span className="text-sm text-gray-300">Safe Address:</span>
+              <span className="text-sm font-mono text-white">
+                {userSafeAddress?.slice(0, 6)}...{userSafeAddress?.slice(-4)}
+              </span>
+            </div>
+            <button
+              onClick={handleResetOnboarding}
+              className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              Change
+            </button>
+          </div>
+          {/* {userUsername && (
+            <div className="flex items-center gap-2">
+              <span className="text-blue-400">👤</span>
+              <span className="text-sm text-gray-300">Username:</span>
+              <span className="text-sm font-semibold text-white">{userUsername}</span>
+            </div>
+          )} */}
+        </div>
+      </div>
+
       <div className="space-y-4 max-w-2xl mx-auto px-4">
         {signals.map((sig, index) => (
           <SignalCard key={sig._id} signal={sig} index={index} onTradeClick={handleTradeClick} />
