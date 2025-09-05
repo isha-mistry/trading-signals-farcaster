@@ -41,7 +41,7 @@ export interface AppProps {
  * - Loading states for async operations
  * 
  * @param props - Component props
- * @param props.title - Optional title for the mini app (defaults to "Maxxit Signals")
+ * @param props.title - Optional title for the mini app (defaults to "ArbMaxx")
  * 
  * @example
  * ```tsx
@@ -49,7 +49,7 @@ export interface AppProps {
  * ```
  */
 export default function App(
-  { title }: AppProps = { title: "Maxxit Signals" }
+  { title }: AppProps = { title: "ArbMaxx" }
 ) {
   // --- Hooks ---
   const {
@@ -83,7 +83,7 @@ export default function App(
       <div className="flex items-center justify-center h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-700">
         <div className="text-center animate-fade-in-up">
           <div className="spinner h-12 w-12 mx-auto mb-6 animate-pulse-glow"></div>
-          <p className="text-gray-300 text-lg font-medium">Loading Maxxit Signals...</p>
+          <p className="text-gray-300 text-lg font-medium">Loading ArbMaxx...</p>
         </div>
       </div>
     );
@@ -109,7 +109,7 @@ export default function App(
                 <span className="text-lg">📊</span>
               </div> */}
               <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-200 via-blue-400 to-blue-300 bg-clip-text text-transparent">
-                Maxxit Signals
+                ArbMaxx
               </h1>
             </div>
           </div>

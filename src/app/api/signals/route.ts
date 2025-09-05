@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   let client;
+  let farcasterClient;
 
   try {
     console.log("API: Starting signals fetch...");
@@ -23,11 +24,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Connect to MongoDB
+    // Connect to main database for signals
     client = await connectDB();
     const db = client.db();
 
-    console.log("API: Connected to database");
+    console.log("API: Connected to main database");
 
     const collection = db.collection("trading-signals");
 
@@ -39,16 +40,54 @@ export async function GET(request: NextRequest) {
 
     console.log(`API: Found ${latestSignals.length} signals`);
 
+    // Connect to farcaster database to check execution status
+    farcasterClient = await connectDB("farcaster");
+    const farcasterDb = farcasterClient.db();
+    const executionCollection = farcasterDb.collection(
+      "trading-signals-farcaster"
+    );
+
+    // Get all tweet IDs to check execution status
+    const tweetIds = latestSignals.map((signal) => signal.tweet_id);
+
+    // Fetch execution records for these signals using tweet_id
+    const executions = await executionCollection
+      .find({ tweetId: { $in: tweetIds } })
+      .toArray();
+
+    console.log(`API: Found ${executions.length} execution records`);
+
+    // Create a map of tweetId to executions for quick lookup
+    const executionMap = new Map();
+    executions.forEach((execution) => {
+      if (!executionMap.has(execution.tweetId)) {
+        executionMap.set(execution.tweetId, []);
+      }
+      executionMap.get(execution.tweetId).push(execution);
+    });
+
+    // Enhance signals with execution data
+    const enhancedSignals = latestSignals.map((signal) => ({
+      ...signal,
+      executedBy: executionMap.get(signal.tweet_id) || [],
+      isExecuted: (executionMap.get(signal.tweet_id) || []).length > 0,
+    }));
+
     if (client) {
       await client.close();
-      console.log("API: Database connection closed");
+      console.log("API: Main database connection closed");
+    }
+
+    if (farcasterClient) {
+      await farcasterClient.close();
+      console.log("API: Farcaster database connection closed");
     }
 
     return NextResponse.json(
       {
         success: true,
-        data: latestSignals,
-        count: latestSignals.length,
+        data: enhancedSignals,
+        count: enhancedSignals.length,
         timestamp: new Date().toISOString(),
       },
       { status: 200 }
@@ -57,7 +96,11 @@ export async function GET(request: NextRequest) {
     console.error("Error fetching latest signals:", error);
     if (client) {
       await client.close();
-      console.log("API: Database connection closed");
+      console.log("API: Main database connection closed");
+    }
+    if (farcasterClient) {
+      await farcasterClient.close();
+      console.log("API: Farcaster database connection closed");
     }
 
     return NextResponse.json(

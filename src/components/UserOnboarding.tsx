@@ -75,7 +75,7 @@ export default function UserOnboarding({ onComplete }: UserOnboardingProps) {
     <div className="signal-card animate-fade-in-up max-w-2xl mx-auto">
       <div className="p-6 text-center">
         <div className="text-blue-400 text-4xl mb-4">🔐</div>
-        <h2 className="text-xl font-bold text-white mb-3">Welcome to Trading Signals</h2>
+        <h2 className="text-xl font-bold text-white mb-3">Welcome to ArbMaxx</h2>
         <p className="text-gray-300 mb-6">
           To access trading signals, please provide your Safe wallet address for verification.
         </p>
@@ -90,7 +90,7 @@ export default function UserOnboarding({ onComplete }: UserOnboardingProps) {
               type="text"
               value={safeAddress}
               onChange={(e) => setSafeAddress(e.target.value)}
-              placeholder="0x1F8BE97AcE2256C263596Fc01DF82936F27E506a"
+              placeholder="0x1F...506a"
               className="w-full px-4 py-3 bg-gray-800/50 border border-gray-600/50 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
               disabled={isValidating}
             />

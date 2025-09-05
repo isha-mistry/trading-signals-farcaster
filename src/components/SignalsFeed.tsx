@@ -39,6 +39,21 @@ type Subscriber = {
   sent: boolean;
 };
 
+type ExecutionData = {
+  safeAddress: string;
+  username: string;
+  executedAt: Date;
+  tradeData: {
+    signalMessage: string;
+    tokenMentioned: string;
+    tp1: number;
+    tp2: number;
+    stopLoss: number;
+    currentPrice: number;
+    maxExitTime: Date;
+  };
+};
+
 type SignalData = {
   token?: string;
   signal?: string; // Buy | Sell | ...
@@ -68,6 +83,9 @@ export type Signal = {
   subscribers?: Subscriber[];
   tweet_link?: string;
   messageSent?: boolean;
+  executedBy?: ExecutionData[];
+  lastExecutedAt?: string | Date;
+  isExecuted?: boolean;
 };
 
 type ApiResponse = {
@@ -121,6 +139,9 @@ function normalizeSignal(raw: any): Signal {
     subscribers: Array.isArray(unwrapped.subscribers) ? unwrapped.subscribers : [],
     tweet_link: unwrapped.tweet_link,
     messageSent: Boolean(unwrapped.messageSent),
+    executedBy: Array.isArray(unwrapped.executedBy) ? unwrapped.executedBy : [],
+    lastExecutedAt: unwrapped.lastExecutedAt,
+    isExecuted: Boolean(unwrapped.isExecuted),
   };
 }
 
@@ -151,11 +172,20 @@ function classNames(...classes: Array<string | false | undefined>): string {
   return classes.filter(Boolean).join(" ");
 }
 
-function SignalCard({ signal, index, onTradeClick }: { signal: Signal; index: number; onTradeClick: (signal: Signal) => void }) {
+function SignalCard({ signal, index, onTradeClick, userSafeAddress, isExecuting }: { signal: Signal; index: number; onTradeClick: (signal: Signal) => Promise<void>; userSafeAddress: string | null; isExecuting: boolean }) {
   const sd = signal.signal_data || {};
   const signalType = (sd.signal || "").toLowerCase();
   const isBuy = signalType === "buy";
   const isSell = signalType === "sell";
+
+  // Check if this signal is already executed by the current user
+  const isExecutedByUser = useMemo(() => {
+    if (!userSafeAddress || !signal.executedBy) return false;
+    return signal.executedBy.some(execution => execution.safeAddress === userSafeAddress);
+  }, [signal.executedBy, userSafeAddress]);
+
+  // Check if signal has any executions (from any user) - for display purposes only
+  const hasExecutions = signal.isExecuted || (signal.executedBy && signal.executedBy.length > 0);
 
   const pnl = useMemo(() =>
     calculatePnL(sd.currentPrice, sd.priceAtTweet, sd.signal),
@@ -266,13 +296,45 @@ function SignalCard({ signal, index, onTradeClick }: { signal: Signal; index: nu
         {/* Trade Button - Only show for Buy signals */}
         {isBuy && (
           <div className="mt-4 pt-3 border-t border-gray-700/50">
-            <button
-              onClick={() => onTradeClick(signal)}
-              className="w-full bg-green-800 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-green-500/25 flex items-center justify-center gap-2"
-            >
-              <span>🚀</span>
-              <span>Execute Trade</span>
-            </button>
+            {isExecutedByUser ? (
+              <div className="w-full bg-green-500/20 border border-green-500/30 text-green-400 font-bold py-3 px-6 rounded-lg flex items-center justify-center gap-2">
+                <span>✅</span>
+                <span>Trade Executed by You</span>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {/* Show execution count from others if any */}
+                {hasExecutions && (
+                  <div className="w-full bg-blue-500/20 border border-blue-500/30 text-blue-400 font-medium py-2 px-4 rounded-lg flex items-center justify-center gap-2 text-sm">
+                    <span>👥</span>
+                    <span>Executed by Others ({signal.executedBy?.length || 0})</span>
+                  </div>
+                )}
+                {/* Execute Trade Button - always available if user hasn't executed */}
+                <button
+                  onClick={() => onTradeClick(signal)}
+                  disabled={isExecuting}
+                  className={classNames(
+                    "w-full font-bold py-3 px-6 rounded-lg transition-all duration-200 flex items-center justify-center gap-2",
+                    isExecuting
+                      ? "bg-gray-600 text-gray-300 cursor-not-allowed"
+                      : "bg-green-800 hover:bg-green-700 text-white hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-green-500/25"
+                  )}
+                >
+                  {isExecuting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-transparent"></div>
+                      <span>Executing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>🚀</span>
+                      <span>Execute Trade</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -288,40 +350,62 @@ export default function SignalsFeed() {
   const [userSafeAddress, setUserSafeAddress] = useState<string | null>(null);
   const [userUsername, setUserUsername] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState<boolean>(true);
+  const [executingTrades, setExecutingTrades] = useState<Set<string>>(new Set());
 
   const handleTradeClick = async (signal: Signal) => {
-    // Prepare the trade data object as requested
+    if (!userSafeAddress) {
+      console.error("No safe address available");
+      return;
+    }
+
+    // Add signal ID to executing trades set
+    setExecutingTrades(prev => new Set(prev).add(signal._id));
+
+    // Prepare the trade data object
+    console.log("signal_data: ", signal.signal_data);
+    console.log("signal_message: ", signal.signal_message);
     const tradeData = {
-      "Signal Message": signal.signal_data?.signal || signal.signal_message || "buy",
-      "Token Mentioned": signal.signal_data?.tokenMentioned || signal.coin || "Unknown",
+      tweetId: signal.tweet_id,
+      "Signal Message": signal.signal_data?.signal || "",
+      "Token Mentioned": signal.signal_data?.tokenMentioned || "Unknown",
       "TP1": signal.signal_data?.targets?.[0] || 0,
       "TP2": signal.signal_data?.targets?.[1] || 0,
       "SL": signal.signal_data?.stopLoss || 0,
       "Current Price": signal.signal_data?.currentPrice || 0,
-      "Max Exit Time": { "$date": signal.signal_data?.maxExitTime || new Date().toISOString() },
-      "username": userUsername || "cp", // Use fetched username or fallback
-      "safeAddress": userSafeAddress || ""
+      "Max Exit Time": { "date": signal.signal_data?.maxExitTime || new Date().toISOString() },
+      "username": userUsername || "",
+      "safeAddress": userSafeAddress
     };
 
-    // console.log("Trade Data:", tradeData);
-
     try {
-
-      if(!process.env.NEXT_PUBLIC_API_URL){
-        throw new Error("NEXT_PUBLIC_API_URL is not set");
-      }
-
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/signal/process`, {
+      const response = await fetch("/api/execute-trade", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(tradeData),
       });
-      setShowToast(true);
 
+      const result = await response.json();
+
+      if (result.success) {
+        setShowToast(true);
+        console.log("Trade executed successfully: ", result);
+        // Refresh signals to show updated execution status
+        await loadSignals();
+      } else {
+        console.error("Error executing trade:", result.message);
+        // You might want to show an error toast here
+      }
     } catch (e) {
       console.error("Error executing trade:", e);
+    } finally {
+      // Remove signal ID from executing trades set
+      setExecutingTrades(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(signal._id);
+        return newSet;
+      });
     }
   };
 
@@ -350,24 +434,29 @@ export default function SignalsFeed() {
     }
   }, []);
 
+  const loadSignals = async () => {
+    // setLoading(true);
+    try {
+      const res = await fetch("/api/signals", { cache: "no-store" });
+      const json: ApiResponse = await res.json();
+      if (!json.success) {
+        throw new Error(json.message || json.error || "Failed to load signals");
+      }
+      const normalized = (json.data || []).map((r) => normalizeSignal(r));
+
+      console.log("normalize: ", normalized)
+      setSignals(normalized as Signal[]);
+    } catch (e: any) {
+      setError(e?.message || "Failed to load signals");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     let isMounted = true;
     const load = async () => {
-      setLoading(true);
-      try {
-        const res = await fetch("/api/signals", { cache: "no-store" });
-        const json: ApiResponse = await res.json();
-        if (!json.success) {
-          throw new Error(json.message || json.error || "Failed to load signals");
-        }
-        const normalized = (json.data || []).map((r) => normalizeSignal(r));
-
-        if (isMounted) setSignals(normalized as Signal[]);
-      } catch (e: any) {
-        if (isMounted) setError(e?.message || "Failed to load signals");
-      } finally {
-        if (isMounted) setLoading(false);
-      }
+      await loadSignals();
     };
     load();
     return () => {
@@ -474,7 +563,14 @@ export default function SignalsFeed() {
 
       <div className="space-y-4 max-w-2xl mx-auto px-4">
         {signals.map((sig, index) => (
-          <SignalCard key={sig._id} signal={sig} index={index} onTradeClick={handleTradeClick} />
+          <SignalCard
+            key={sig._id}
+            signal={sig}
+            index={index}
+            onTradeClick={handleTradeClick}
+            userSafeAddress={userSafeAddress}
+            isExecuting={executingTrades.has(sig._id)}
+          />
         ))}
       </div>
     </>
